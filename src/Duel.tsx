@@ -1,18 +1,356 @@
-import {useEffect,useRef,useState} from 'react';
-import {Play,Pause,RotateCcw,SkipForward,Handshake,ShieldAlert,ArrowRight} from 'lucide-react';
-import {defaults,meta,rng,step,stats,validate,ids} from './engine';
-import type {Action,Config,Round,Strategy} from './engine';
-import type {Report} from './storage';
-import {Button,Panel,ConfigFields,StrategySelect,Chart,pct,num} from './components';
-export type Save=(kind:Report['kind'],config:Config,data:unknown,name:string)=>void;
-export function Duel({save}:{save:Save}){
- const[c,setC]=useState<Config>(structuredClone(defaults)),[opponent,setOpponent]=useState<Strategy>('tft'),[player,setPlayer]=useState<Strategy>('tft'),[history,setHistory]=useState<Round[]>([]),[done,setDone]=useState(false),[playing,setPlaying]=useState(false);
- const random=useRef(rng(c.seed)),h=useRef<Round[]>([]),ended=useRef(false),saved=useRef(false);
- function reset(){h.current=[];ended.current=false;random.current=rng(c.seed);saved.current=false;setHistory([]);setDone(false);setPlaying(false);}
- useEffect(reset,[c,opponent]);
- function advance(action:Action|Strategy){if(ended.current||validate(c).length)return;const next=[...h.current,step(h.current,action,opponent,c,random.current)];h.current=next;setHistory(next);if(next.length>=c.rounds||(c.mode==='random'&&random.current()<c.stop)){ended.current=true;setDone(true);setPlaying(false);}}
- useEffect(()=>{if(!playing)return;const timer=setInterval(()=>advance(player),650);return()=>clearInterval(timer);},[playing,player,c,opponent]);
- useEffect(()=>{if(done&&!saved.current){saved.current=true;save('match',c,{opponent,player,history},`对局 · ${meta[opponent].name}`);}},[done]);
- const a=stats(history),b=stats(history,'b'),last=history.at(-1);
- return <><div className="page-intro"><span className="eyebrow">EXPERIMENT 01 / THE REPEATED GAME</span><h1>把选择，交给你。</h1><p>你们同时决定。合作建立连接，背叛改变收益。下一轮，还会信任吗？</p></div><div className="duel-layout"><div><section className="arena"><div className="arena-top"><span className="status-dot">{done?'实验完成':history.length?'对局进行中':'等待第一次选择'}</span><span className="mono">ROUND {String(history.length).padStart(2,'0')} / {c.rounds}</span></div><div className="duel-players"><div className="player"><div className={`avatar ${last?.a==='D'?'amber':''}`} key={`a${history.length}`}><span>◎</span></div><span className="micro">YOU / 研究员</span><h2>{last?(last.a==='C'?'合作':'背叛'):'你的选择'}</h2><strong className="score">{a.total}<small>累计收益</small></strong></div><div className="duel-link"><span>⇄</span><small>{last?`${last.sa} : ${last.sb}`:'同时选择'}</small></div><div className="player"><div className={`avatar ${last?.b==='D'?'amber':'purple'}`} key={`b${history.length}`}><span>{done?meta[opponent].symbol:'◈'}</span></div><span className="micro">OPPONENT / 规则机器人</span><h2>{last?(last.b==='C'?'合作':'背叛'):'尚未揭晓'}</h2><strong className="score">{b.total}<small>累计收益</small></strong></div></div><div className="choice-row"><Button kind="cooperate" disabled={done||playing||validate(c).length>0} onClick={()=>advance('C')}><Handshake size={22}/><span>选择合作<small>COOPERATE</small></span><ArrowRight size={18}/></Button><Button kind="defect" disabled={done||playing||validate(c).length>0} onClick={()=>advance('D')}><ShieldAlert size={22}/><span>选择背叛<small>DEFECT</small></span><ArrowRight size={18}/></Button></div><p className="arena-caption">对手只读取已结束回合的实际行动。噪声会独立翻转双方行动。</p></section><div className="stats-row"><div><span>你的合作率</span><strong>{pct(a.cooperation)}</strong></div><div><span>你的背叛率</span><strong>{pct(a.defection)}</strong></div><div><span>你的平均收益</span><strong>{num(a.average)}</strong></div><div><span>对手合作率</span><strong>{pct(b.cooperation)}</strong></div></div><Panel title="收益轨迹" tag="PER ROUND"><Chart maxY={Math.max(c.payoff.T,c.payoff.R,c.payoff.P,c.payoff.S)} yLabel="双方逐轮收益" series={[{label:'你',color:'#8bd4b5',values:history.map(r=>r.sa)},{label:'对手',color:'#b3a4de',values:history.map(r=>r.sb)}]}/></Panel>{done&&<Panel title={`策略揭晓 · ${meta[opponent].name}`} tag="DEBRIEF"><p>{meta[opponent].rule}</p><p>你的平均收益为 {num(a.average)}，对手为 {num(b.average)}。{a.cooperation>b.cooperation?'你提供了更多合作，对方是否给予回报？':'你的行动可能影响了对手下一轮的回应。'} 一次结果不能判断策略在所有环境下的优劣。</p><p className="note">完整参数与逐轮结果已加入实验档案。</p><Button onClick={reset}>再次挑战 <ArrowRight size={16}/></Button></Panel>}<Panel title="行动时间线" tag={`${history.length} ROUNDS`}><div className="timeline"><span>你</span><div>{history.map((r,i)=><i key={i} className={r.a==='C'?'c':'d'} title={`第${i+1}轮：${r.a==='C'?'合作':'背叛'}`}/>)}</div><span>对手</span><div>{history.map((r,i)=><i key={i} className={r.b==='C'?'c':'d'} title={`第${i+1}轮：${r.b==='C'?'合作':'背叛'}`}/>)}</div></div><details><summary>逐轮原始记录（含行动误差）</summary><div className="table-scroll"><table><thead><tr><th>回合</th><th>你的行动</th><th>对手行动</th><th>收益</th><th>事件</th></tr></thead><tbody>{history.map((r,i)=><tr key={i}><td>{i+1}</td><td>{r.a==='C'?'合作':'背叛'}</td><td>{r.b==='C'?'合作':'背叛'}</td><td>{r.sa} / {r.sb}</td><td>{r.a!==r.intendedA||r.b!==r.intendedB?'行动被噪声翻转':'—'}</td></tr>)}</tbody></table></div></details></Panel></div><aside><Panel title="实验设置" tag="CONFIGURATION"><StrategySelect value={opponent} onChange={setOpponent}/><ConfigFields config={c} onChange={setC}/><details><summary>终止规则、收益与策略参数</summary><ConfigFields config={c} onChange={setC} full/></details><p className="note">修改参数或对手会重置对局。随机终止在每轮后以配置概率结束；最多进行 {c.rounds} 轮。</p><StrategySelect label="自动播放 · 你的策略" value={player} onChange={setPlayer}/><div className="button-row"><Button disabled={done||validate(c).length>0} onClick={()=>setPlaying(!playing)}>{playing?<Pause size={16}/>:<Play size={16}/>} {playing?'暂停':'自动播放'}</Button><Button disabled={done||playing||validate(c).length>0} onClick={()=>advance(player)}><SkipForward size={16}/>单步</Button><Button onClick={reset}><RotateCcw size={16}/>重置</Button></div></Panel><Panel title="收益速查"><div className="payoff-preview"><span>你 / 对手</span><span>合作</span><span>背叛</span><span>合作</span><b>{c.payoff.R} / {c.payoff.R}</b><b>{c.payoff.S} / {c.payoff.T}</b><span>背叛</span><b>{c.payoff.T} / {c.payoff.S}</b><b>{c.payoff.P} / {c.payoff.P}</b></div><p className="note">第一个数字始终是你的收益。</p></Panel><div className="margin-note"><span>LAB NOTE 001</span><p>一次占优的选择，<br/>会是长期的最佳选择吗？</p></div></aside></div></>;
+import { useEffect, useRef, useState } from "react";
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  SkipForward,
+  Handshake,
+  ShieldAlert,
+  ArrowRight,
+} from "lucide-react";
+import { defaults, meta, rng, step, stats, validate, ids } from "./engine";
+import type { Action, Config, Round, Strategy } from "./engine";
+import type { Report } from "./storage";
+import {
+  Button,
+  Panel,
+  ConfigFields,
+  StrategySelect,
+  Chart,
+  pct,
+  num,
+} from "./components";
+export type Save = (
+  kind: Report["kind"],
+  config: Config,
+  data: unknown,
+  name: string,
+) => void;
+export function Duel({ save }: { save: Save }) {
+  const [c, setC] = useState<Config>(structuredClone(defaults)),
+    [opponent, setOpponent] = useState<Strategy>("tft"),
+    [player, setPlayer] = useState<Strategy>("tft"),
+    [history, setHistory] = useState<Round[]>([]),
+    [done, setDone] = useState(false),
+    [playing, setPlaying] = useState(false);
+  const random = useRef(rng(c.seed)),
+    h = useRef<Round[]>([]),
+    ended = useRef(false),
+    saved = useRef(false);
+  function reset() {
+    h.current = [];
+    ended.current = false;
+    random.current = rng(c.seed);
+    saved.current = false;
+    setHistory([]);
+    setDone(false);
+    setPlaying(false);
+  }
+  useEffect(reset, [c, opponent]);
+  function advance(action: Action | Strategy) {
+    if (ended.current || validate(c).length) return;
+    const next = [
+      ...h.current,
+      step(h.current, action, opponent, c, random.current),
+    ];
+    h.current = next;
+    setHistory(next);
+    if (
+      next.length >= c.rounds ||
+      (c.mode === "random" && random.current() < c.stop)
+    ) {
+      ended.current = true;
+      setDone(true);
+      setPlaying(false);
+    }
+  }
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setInterval(() => advance(player), 650);
+    return () => clearInterval(timer);
+  }, [playing, player, c, opponent]);
+  useEffect(() => {
+    if (done && !saved.current) {
+      saved.current = true;
+      save(
+        "match",
+        c,
+        { opponent, player, history },
+        `对局 · ${meta[opponent].name}`,
+      );
+    }
+  }, [done]);
+  const a = stats(history),
+    b = stats(history, "b"),
+    last = history.at(-1);
+  return (
+    <>
+      <div className="page-intro">
+        <span className="eyebrow">EXPERIMENT 01 / THE REPEATED GAME</span>
+        <h1>把选择，交给你。</h1>
+        <p>你们同时决定。合作建立连接，背叛改变收益。下一轮，还会信任吗？</p>
+      </div>
+      <div className="duel-layout">
+        <div>
+          <section className="arena">
+            <div className="arena-top">
+              <span className="status-dot">
+                {done
+                  ? "实验完成"
+                  : history.length
+                    ? "对局进行中"
+                    : "等待第一次选择"}
+              </span>
+              <span className="mono">
+                ROUND {String(history.length).padStart(2, "0")} / {c.rounds}
+              </span>
+            </div>
+            <div className="duel-players">
+              <div className="player">
+                <div
+                  className={`avatar ${last?.a === "D" ? "amber" : ""}`}
+                  key={`a${history.length}`}
+                >
+                  <span>◎</span>
+                </div>
+                <span className="micro">YOU / 研究员</span>
+                <h2>
+                  {last ? (last.a === "C" ? "合作" : "背叛") : "你的选择"}
+                </h2>
+                <strong className="score">
+                  {a.total}
+                  <small>累计收益</small>
+                </strong>
+              </div>
+              <div className="duel-link">
+                <span>⇄</span>
+                <small>{last ? `${last.sa} : ${last.sb}` : "同时选择"}</small>
+              </div>
+              <div className="player">
+                <div
+                  className={`avatar ${last?.b === "D" ? "amber" : "purple"}`}
+                  key={`b${history.length}`}
+                >
+                  <span>{done ? meta[opponent].symbol : "◈"}</span>
+                </div>
+                <span className="micro">OPPONENT / 规则机器人</span>
+                <h2>
+                  {last ? (last.b === "C" ? "合作" : "背叛") : "尚未揭晓"}
+                </h2>
+                <strong className="score">
+                  {b.total}
+                  <small>累计收益</small>
+                </strong>
+              </div>
+            </div>
+            <div className="choice-row">
+              <Button
+                kind="cooperate"
+                disabled={done || playing || validate(c).length > 0}
+                onClick={() => advance("C")}
+              >
+                <Handshake size={22} />
+                <span>
+                  选择合作<small>COOPERATE</small>
+                </span>
+                <ArrowRight size={18} />
+              </Button>
+              <Button
+                kind="defect"
+                disabled={done || playing || validate(c).length > 0}
+                onClick={() => advance("D")}
+              >
+                <ShieldAlert size={22} />
+                <span>
+                  选择背叛<small>DEFECT</small>
+                </span>
+                <ArrowRight size={18} />
+              </Button>
+            </div>
+            <p className="arena-caption">
+              对手只读取已结束回合的实际行动。噪声会独立翻转双方行动。
+            </p>
+          </section>
+          <div className="stats-row">
+            <div>
+              <span>你的合作率</span>
+              <strong>{pct(a.cooperation)}</strong>
+            </div>
+            <div>
+              <span>你的背叛率</span>
+              <strong>{pct(a.defection)}</strong>
+            </div>
+            <div>
+              <span>你的平均收益</span>
+              <strong>{num(a.average)}</strong>
+            </div>
+            <div>
+              <span>对手合作率</span>
+              <strong>{pct(b.cooperation)}</strong>
+            </div>
+          </div>
+          <Panel title="收益轨迹" tag="PER ROUND">
+            <Chart
+              maxY={Math.max(c.payoff.T, c.payoff.R, c.payoff.P, c.payoff.S)}
+              yLabel="双方逐轮收益"
+              series={[
+                {
+                  label: "你",
+                  color: "#8bd4b5",
+                  values: history.map((r) => r.sa),
+                },
+                {
+                  label: "对手",
+                  color: "#b3a4de",
+                  values: history.map((r) => r.sb),
+                },
+              ]}
+            />
+          </Panel>
+          {done && (
+            <Panel title={`策略揭晓 · ${meta[opponent].name}`} tag="DEBRIEF">
+              <p>{meta[opponent].rule}</p>
+              <p>
+                你的平均收益为 {num(a.average)}，对手为 {num(b.average)}。
+                {a.cooperation > b.cooperation
+                  ? "你提供了更多合作，对方是否给予回报？"
+                  : "你的行动可能影响了对手下一轮的回应。"}{" "}
+                一次结果不能判断策略在所有环境下的优劣。
+              </p>
+              <p className="note">完整参数与逐轮结果已加入实验档案。</p>
+              <Button onClick={reset}>
+                再次挑战 <ArrowRight size={16} />
+              </Button>
+            </Panel>
+          )}
+          <Panel title="行动时间线" tag={`${history.length} ROUNDS`}>
+            <div className="timeline">
+              <span>你</span>
+              <div>
+                {history.map((r, i) => (
+                  <i
+                    key={i}
+                    className={r.a === "C" ? "c" : "d"}
+                    title={`第${i + 1}轮：${r.a === "C" ? "合作" : "背叛"}`}
+                  />
+                ))}
+              </div>
+              <span>对手</span>
+              <div>
+                {history.map((r, i) => (
+                  <i
+                    key={i}
+                    className={r.b === "C" ? "c" : "d"}
+                    title={`第${i + 1}轮：${r.b === "C" ? "合作" : "背叛"}`}
+                  />
+                ))}
+              </div>
+            </div>
+            <details>
+              <summary>逐轮原始记录（含行动误差）</summary>
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>回合</th>
+                      <th>你的行动</th>
+                      <th>对手行动</th>
+                      <th>收益</th>
+                      <th>事件</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((r, i) => (
+                      <tr key={i}>
+                        <td>{i + 1}</td>
+                        <td>{r.a === "C" ? "合作" : "背叛"}</td>
+                        <td>{r.b === "C" ? "合作" : "背叛"}</td>
+                        <td>
+                          {r.sa} / {r.sb}
+                        </td>
+                        <td>
+                          {r.a !== r.intendedA || r.b !== r.intendedB
+                            ? "行动被噪声翻转"
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </Panel>
+        </div>
+        <aside>
+          <Panel title="实验设置" tag="CONFIGURATION">
+            <StrategySelect value={opponent} onChange={setOpponent} />
+            <ConfigFields config={c} onChange={setC} />
+            <details>
+              <summary>终止规则、收益与策略参数</summary>
+              <ConfigFields config={c} onChange={setC} full />
+            </details>
+            <p className="note">
+              修改参数或对手会重置对局。随机终止在每轮后以配置概率结束；最多进行{" "}
+              {c.rounds} 轮。
+            </p>
+            <StrategySelect
+              label="自动播放 · 你的策略"
+              value={player}
+              onChange={setPlayer}
+            />
+            <div className="button-row">
+              <Button
+                disabled={done || validate(c).length > 0}
+                onClick={() => setPlaying(!playing)}
+              >
+                {playing ? <Pause size={16} /> : <Play size={16} />}{" "}
+                {playing ? "暂停" : "自动播放"}
+              </Button>
+              <Button
+                disabled={done || playing || validate(c).length > 0}
+                onClick={() => advance(player)}
+              >
+                <SkipForward size={16} />
+                单步
+              </Button>
+              <Button onClick={reset}>
+                <RotateCcw size={16} />
+                重置
+              </Button>
+            </div>
+          </Panel>
+          <Panel title="收益速查">
+            <div className="payoff-preview">
+              <span>你 / 对手</span>
+              <span>合作</span>
+              <span>背叛</span>
+              <span>合作</span>
+              <b>
+                {c.payoff.R} / {c.payoff.R}
+              </b>
+              <b>
+                {c.payoff.S} / {c.payoff.T}
+              </b>
+              <span>背叛</span>
+              <b>
+                {c.payoff.T} / {c.payoff.S}
+              </b>
+              <b>
+                {c.payoff.P} / {c.payoff.P}
+              </b>
+            </div>
+            <p className="note">第一个数字始终是你的收益。</p>
+          </Panel>
+          <div className="margin-note">
+            <span>LAB NOTE 001</span>
+            <p>
+              一次占优的选择，
+              <br />
+              会是长期的最佳选择吗？
+            </p>
+          </div>
+        </aside>
+      </div>
+    </>
+  );
 }
