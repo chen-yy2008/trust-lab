@@ -203,7 +203,8 @@ export function csv(rows: unknown[][]) {
         r
           .map((v) => {
             const s = String(v ?? "");
-            const safe = /^[=+\-@]/.test(s) ? "'" + s : s;
+            const safe =
+              typeof v === "string" && /^[=+\-@]/.test(s) ? "'" + s : s;
             return '"' + safe.replaceAll('"', '""') + '"';
           })
           .join(","),

@@ -61,4 +61,9 @@ describe("安全档案读写", () => {
     expect(reportCSV(r).split("\r\n")).toHaveLength(3);
     expect(reportCSV(r)).toContain('"C","C","C","C","3","3"');
   });
+  it("自定义负收益按数值原样导出，公式文本仍转义", () => {
+    expect(csv([[-5, -0.25, "-SUM(A1)"]])).toBe(
+      '\uFEFF"-5","-0.25","\'-SUM(A1)"',
+    );
+  });
 });
